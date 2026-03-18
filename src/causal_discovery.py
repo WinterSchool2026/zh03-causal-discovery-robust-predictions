@@ -281,6 +281,9 @@ def ges(data, score_method="bic", regressor=None):
 #     return G
 
 
+from itertools import combinations, permutations
+
+
 def pc_alg(data, alpha=0.05, ci_method="partial", return_ci=False):
     nodes = list(data.columns)
 
@@ -288,65 +291,82 @@ def pc_alg(data, alpha=0.05, ci_method="partial", return_ci=False):
     G = {node: set(nodes) - {node} for node in nodes}
 
     # -------------------------------------------------------
-    # Phase 1: Skeleton discovery
+    # Phase 1: Skeleton discovery (PC-Stable)
     # -------------------------------------------------------
     sep_set   = {(X, Y): set() for X in nodes for Y in nodes if X != Y}
-    ci_strings = set()   # "X _||_ Y | {Z, ...}" for every accepted independence
+    ci_strings = set()   
 
     def _ci_str(X, Y, S):
         cond = "{ " + ", ".join(sorted(str(s) for s in S)) + " }" if S else "\u2205"
         return f"{X} _||_ {Y} | {cond}"
 
     l = 0
-    cont = True
-    while cont:
-        cont = False
+    while True:
+        # FREEZE the graph at the start of level l
+        frozen_G = {n: set(G[n]) for n in nodes}
+        
+        edges_to_remove = []
+
         for X in nodes:
-            for Y in list(G[X]):          # always fresh
-                if Y not in G[X]:         # may have been removed this pass
+            for Y in list(frozen_G[X]):
+                # If we already marked it for removal, skip symmetric test
+                if (X, Y) in edges_to_remove or (Y, X) in edges_to_remove:
                     continue
-                adj_X = list(G[X] - {Y}) # current neighbours of X, excluding Y
+                
+                # Use the FROZEN adjacencies to build the conditioning set
+                adj_X = list(frozen_G[X] - {Y})
                 if len(adj_X) < l:
                     continue
+                
                 for S in combinations(adj_X, l):
                     p = ci_test(data, X, Y, list(S), method=ci_method)
-                    if p > alpha:         # X ⊥ Y | S  →  remove edge
-                        G[X].discard(Y)
-                        G[Y].discard(X)
+                    if p > alpha:             
+                        edges_to_remove.append((X, Y))
                         sep_set[(X, Y)] = set(S)
                         sep_set[(Y, X)] = set(S)
                         ci_strings.add(_ci_str(X, Y, S))
-                        cont = True
-                        break             # no need to test other S for this pair
-        l += 1
+                        break                 
 
+        # Batch remove the edges found at this level
+        for u, v in edges_to_remove:
+            G[u].discard(v)
+            G[v].discard(u)
+
+        # Unconditionally advance l. Standard PC break condition:
+        # Break if no node has enough remaining neighbors to form a set of size l+1
+        if not any(len(G[X]) >= l + 1 for X in nodes):
+            break                         
+            
+        l += 1
     # -------------------------------------------------------
     # Phase 2: V-structure (collider) orientation
     # Unshielded triple X — Y — Z, Y not in sep_set(X,Z)  =>  X -> Y <- Z
     # -------------------------------------------------------
-    directed   = {node: set() for node in nodes}  # directed[u] = {v : u -> v}
+    directed   = {node: set() for node in nodes}   # directed[u] = {v : u -> v}
+    undirected = {node: set(G[node]) for node in nodes}
 
-    for Y in nodes:
-        adj_Y = list(G[Y])
-        for X, Z in combinations(adj_Y, 2):
-            if Z in G[X]:                          # shielded triple — skip
+    for node_y in nodes:
+        adj_y = list(undirected[node_y])
+        for node_x, node_z in combinations(adj_y, 2):
+            if node_z in undirected[node_x]:       # shielded — skip
                 continue
-            if Y not in sep_set.get((X, Z), set()):
-                directed[X].add(Y);  directed[Z].add(Y)
-                G[X].discard(Y);     G[Y].discard(X)
-                G[Z].discard(Y);     G[Y].discard(Z)
+            if node_y not in sep_set.get((node_x, node_z), set()):
+                directed[node_x].add(node_y)
+                directed[node_z].add(node_y)
+                undirected[node_x].discard(node_y)
+                undirected[node_y].discard(node_x)
+                undirected[node_z].discard(node_y)
+                undirected[node_y].discard(node_z)
 
     # -------------------------------------------------------
-    # Phase 3: Meek rules — propagate orientations
-    # G[u]        = undirected neighbours of u
-    # directed[u] = {v : u -> v}
+    # Phase 3: Meek rules
     # -------------------------------------------------------
     def is_adjacent(u, v):
-        return v in G[u] or v in directed[u] or u in directed[v]
+        return v in undirected[u] or v in directed[u] or u in directed[v]
 
     def orient(u, v):
-        """Orient undirected edge u — v  as  u -> v."""
-        G[u].discard(v);  G[v].discard(u)
+        undirected[u].discard(v)
+        undirected[v].discard(u)
         directed[u].add(v)
 
     changed = True
@@ -354,37 +374,39 @@ def pc_alg(data, alpha=0.05, ci_method="partial", return_ci=False):
         changed = False
         for B in nodes:
 
-            # R1: A -> B — C,  A not adj C   =>  B -> C
-            for A in list(directed):
+            # R1: A -> B - C,  A not adj C  =>  B -> C
+            for A in nodes:
                 if B not in directed[A]:
                     continue
-                for C in list(G[B]):
+                for C in list(undirected[B]):
                     if not is_adjacent(A, C):
-                        orient(B, C);  changed = True
+                        orient(B, C)
+                        changed = True
 
-            # R2: A — B,  A -> C -> B   =>  A -> B  (no directed cycle)
-            for C in list(directed):
+            # R2: A - B,  A -> C -> B  =>  A -> B  (no cycle)
+            for C in nodes:
                 if B not in directed[C]:
                     continue
-                for A in list(G[B]):
-                    if B in directed[A]:
-                        continue
+                for A in list(undirected[B]):
                     if C in directed[A]:
-                        orient(A, B);  changed = True
+                        orient(A, B)
+                        changed = True
 
-            # R3: A -> D <- C,  A — B,  C — B,  D — B,  A not adj C   =>  D -> B
-            for D in list(G[B]):
-                parents_of_D = [u for u in directed if D in directed[u]]
-                for A, C in combinations(parents_of_D, 2):
-                    if A not in G[B] or C not in G[B]:
+            # R3: A -> Mid <- C,  A - B,  C - B,  Mid - B,  A not adj C  =>  Mid -> B
+            for Mid in list(undirected[B]):
+                parents_mid = [u for u in nodes if Mid in directed[u]]
+                for A, C in combinations(parents_mid, 2):
+                    if A not in undirected[B] or C not in undirected[B]:
                         continue
                     if is_adjacent(A, C):
                         continue
-                    orient(D, B);  changed = True;  break
+                    orient(Mid, B)
+                    changed = True
+                    break
 
-            # R4: A — B,  A — C -> Mid -> B,  A not adj Mid   =>  A -> B
-            for A in list(G[B]):
-                for C in list(G[A]):
+            # R4: A - B,  A - C -> Mid -> B,  A not adj Mid  =>  A -> B
+            for A in list(undirected[B]):
+                for C in list(undirected[A]):
                     if C == B:
                         continue
                     for Mid in directed[C]:
@@ -392,31 +414,26 @@ def pc_alg(data, alpha=0.05, ci_method="partial", return_ci=False):
                             continue
                         if is_adjacent(A, Mid):
                             continue
-                        orient(A, B);  changed = True
+                        orient(A, B)
+                        changed = True
 
     # -------------------------------------------------------
-    # Build return value: result[node] = set of parents
+    # Return oriented adjacency dict  result[node] = set of parents
     # Directed  A -> B  =>  result[B] contains A (not vice-versa)
-    # Undirected A — B  =>  result[A] contains B AND result[B] contains A
-    #
-    # Safety: strip from G anything already in directed to avoid
-    # double-counting edges that were oriented during Meek.
+    # Undirected A - B  =>  result[A] contains B AND result[B] contains A
     # -------------------------------------------------------
     result = {node: set() for node in nodes}
-
     for src in nodes:
         for tgt in directed[src]:
-            result[tgt].add(src)      # src is a parent of tgt
-            G[src].discard(tgt)       # remove from undirected if still there
-            G[tgt].discard(src)
-
+            result[tgt].add(src)
     for node in nodes:
-        for nb in G[node]:            # remaining undirected edges
+        for nb in undirected[node]:
             result[node].add(nb)
 
     if return_ci:
         return result, ci_strings
-    return result
+    else:
+        return result
 
 
 def fci_alg(data, alpha=0.05, ci_method="partial"):

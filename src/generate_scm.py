@@ -59,7 +59,7 @@ class SCMGenerator:
         self.W *= np.random.choice([-1, 1], size=(self.n_nodes, self.n_nodes))
         self.is_fitted = True
         
-    def fit_from_adjacency(self, A, Y_idx, is_linear=True, noise_type='gaussian', weight_low=1.0, weight_high=1.1):
+    def fit_from_adjacency(self, A, Y_idx, is_linear=True, noise_type='gaussian', weight_low=4.0, weight_high=6.0):
         if A.shape != (self.n_nodes, self.n_nodes):
             raise ValueError(f"Adjacency matrix must be of shape {(self.n_nodes, self.n_nodes)}")
 
@@ -409,3 +409,55 @@ def plot_graphs_from_adj(A_list, Y_idx_list=None, column_names_list=None, plot_t
 
     plt.tight_layout()
     plt.show()
+    
+    
+    
+# -------------------------------------------------------
+# Helper: extract a pandas adjacency matrix from causal-learn
+# -------------------------------------------------------
+def get_adjacency_pc(cg, col_names):
+    """
+    Extract adjacency matrix from a causal-learn PC CausalGraph.
+
+    causal-learn convention for cg.G.graph[i, j]:
+      -1  : i --> j  (arrow tail at j means edge points TO j)
+       1  : i <-- j  (arrowhead at i)
+      In a CPDAG, an undirected edge i -- j has graph[i,j]=graph[j,i]=-1
+      A directed edge i --> j has graph[i,j]=-1 and graph[j,i]=1
+
+    We build adj[src, tgt]=1 to mean src --> tgt.
+    Undirected edges are kept as adj[i,j]=adj[j,i]=1.
+    """
+    g = cg.G.graph          # shape (n, n)
+    n = len(col_names)
+    adj = pd.DataFrame(0, index=col_names, columns=col_names)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            # directed edge i --> j : g[i,j]==-1 AND g[j,i]==1
+            if g[i, j] == -1 and g[j, i] == 1:
+                adj.iloc[i, j] = 1   # src=i, tgt=j
+            # undirected edge i -- j : g[i,j]==-1 AND g[j,i]==-1
+            elif g[i, j] == -1 and g[j, i] == -1:
+                adj.iloc[i, j] = 1
+    return adj
+
+
+def get_adjacency_ges(record, col_names):
+    """
+    Extract adjacency matrix from a causal-learn GES result dict.
+    record['G'] is a GeneralGraph; same graph encoding as PC above.
+    """
+    g = record['G'].graph
+    n = len(col_names)
+    adj = pd.DataFrame(0, index=col_names, columns=col_names)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            if g[i, j] == -1 and g[j, i] == 1:
+                adj.iloc[i, j] = 1
+            elif g[i, j] == -1 and g[j, i] == -1:
+                adj.iloc[i, j] = 1
+    return adj
