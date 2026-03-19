@@ -54,4 +54,4 @@ Demonstrates why **causal parents** of Y are more stable predictors than correla
 | 2 | Markov Equivalence Classes | CPDAG | Identifiability limits |
 | 3 | Multivariate Causal Discovery | PC, GES, FCI, LiNGAM | Full graph recovery |
 | 4 | Causal Feature Selection | HITON-MB, IAMB, MB-GES | Markov Blanket |
-| 5 | CFS for Robust Prediction | Parent-based selection | Distribution shift |
+| 5 | CFS for Robust Prediction | Parent-based and MB selection | Distribution shift |
