@@ -46,14 +46,6 @@ Demonstrates why **causal parents** of Y are more stable predictors than correla
 
 ---
 
-### 06 — Invariant Causal Predictors (ICP)
-
-[![Open 06 – Invariant Causal Predictors in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/WinterSchool2026/zh03-causal-discovery-robust-predictions/blob/main/06_invariant_causal_predictors.ipynb)
-
-Introduces **Invariant Causal Prediction**: a multi-environment method that identifies causal parents of Y directly from invariance of the conditional distribution across environments — without requiring full graph recovery. Covers the ICP algorithm, environment construction, invariance testing, and a head-to-head comparison with other selectors under intervention shifts. Discusses scaling limitations (exponential in the number of features) and practical workarounds.
-
----
-
 ## Summary
 
 | # | Notebook | Core method | Key concept |
@@ -63,4 +55,3 @@ Introduces **Invariant Causal Prediction**: a multi-environment method that iden
 | 3 | Multivariate Causal Discovery | PC, GES, FCI, LiNGAM | Full graph recovery |
 | 4 | Causal Feature Selection | HITON-MB, IAMB, MB-GES | Markov Blanket |
 | 5 | CFS for Robust Prediction | Parent-based selection | Distribution shift |
-| 6 | Invariant Causal Predictors | ICP | Multi-environment invariance |
