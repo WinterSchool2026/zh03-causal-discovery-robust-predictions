@@ -1,9 +1,6 @@
 # Causal Discovery and Causal Feature Selection for Robust Prediction
 
-This repository contains a series of tutorial notebooks exploring the intersection of causal inference and machine learning. The central question: **can we do better than standard feature selection when we care about robustness under distribution shift?**
-
-**Prerequisites:** basic probability, linear regression, familiarity with Python/sklearn.  
-**Packages:** `numpy`, `sklearn`, `causallearn`, `cdt`, `dcor`, and custom helpers (`generate_scm`, `MB`, `causal_discovery`, `causal_feature_selection`).
+This repository contains a series of tutorial notebooks exploring the intersection of causal inference and robust machine learning.
 
 ---
 
